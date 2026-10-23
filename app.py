@@ -551,6 +551,27 @@ def ensure_grid_size(service, spreadsheet_id, props, n_rows, n_cols):
     ).execute()
 
 
+def write_metadata_tab(service, spreadsheet_id, spreadsheet_meta, meta_df, tab_title="Metadata"):
+    """Timpa tab Metadata dengan satu baris metadata; tab dibuat bila belum ada."""
+    titles = {s["properties"]["title"] for s in spreadsheet_meta.get("sheets", [])}
+    if tab_title not in titles:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": [{"addSheet": {"properties": {"title": tab_title}}}]},
+        ).execute()
+    q = quote_sheet_title(tab_title)
+    text_cols = {"Data Period", "Data Quality"}  # cegah Sheets menebak jadi tanggal
+    row = [to_sheet_value(v, as_text=(c in text_cols))
+           for c, v in zip(meta_df.columns, meta_df.iloc[0])]
+    service.spreadsheets().values().clear(
+        spreadsheetId=spreadsheet_id, range=q, body={}).execute()
+    service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id, range=f"{q}!A1",
+        valueInputOption="USER_ENTERED",
+        body={"values": [list(meta_df.columns), row]},
+    ).execute()
+
+
 def replace_worksheet_values(service, spreadsheet_id, tab_props, values, chunk=5000, progress=None):
     """Clear tab, lalu tulis header + data bertahap (chunk baris)."""
     title = tab_props["title"]
@@ -727,8 +748,11 @@ if st.button("☁️ Update Google Sheets", type="primary",
         with st.spinner("Meng-update Google Sheets..."):
             response = replace_worksheet_values(
                 sheets_service, spreadsheet_id, target_props, values, progress=progress)
+            meta_tab = str(st.secrets.get("drive", {}).get("metadata_tab", "Metadata"))
+            write_metadata_tab(sheets_service, spreadsheet_id, metadata,
+                               res["metadata"], tab_title=meta_tab)
 
-        st.success("Google Sheets berhasil diperbarui.")
+        st.success(f"Google Sheets berhasil diperbarui (tab data + tab {meta_tab}).")
         st.write(f"**Updated range:** {response['updatedRange']}")
         st.write(f"**Updated rows:** {response['updatedRows']:,}")
         st.write(f"**Updated columns:** {response['updatedColumns']}")
