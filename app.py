@@ -348,6 +348,25 @@ def summarize(df, group_col):
     )
 
 
+def build_metadata(df, score):
+    """Metadata satu baris untuk dashboard."""
+    if df["Order Date"].notna().any():
+        period = (df["Order Date"].min().strftime("%d %b %Y")
+                  + " - " + df["Order Date"].max().strftime("%d %b %Y"))
+    else:
+        period = ""
+    return pd.DataFrame([{
+        "Last Update": datetime.now().strftime("%Y-%m-%d"),
+        "Data Period": period,
+        "Total Rows": int(len(df)),
+        "Total PO": int(df["PO#"].nunique()),
+        "Total Add Qty": int(df["Add Qty"].sum()),
+        "Average Add %": round(float(df["Add %"].mean()), 4),
+        "Data Quality": f"{score:.0f}/100",
+        "Version": VERSION,
+    }])
+
+
 @st.cache_data(show_spinner="Menjalankan ETL v1.1...")
 def run_pipeline(file_bytes, source_name):
     raw = pd.read_excel(io.BytesIO(file_bytes))  # sheet pertama, sama dengan Colab
@@ -387,15 +406,7 @@ def run_pipeline(file_bytes, source_name):
     )
     category_audit["Is Standard"] = category_audit["Label Category"].isin(list(CATEGORY_MASTER.values()))
 
-    total_order = df["Order Qty"].sum()
-    weighted = df["Add Qty"].sum() / total_order if total_order > 0 else np.nan
-    metadata = pd.DataFrame({
-        "Metric": ["Generated At", "Source File", "Total Rows", "Total PO", "Total Add Qty",
-                   "Average Add %", "Weighted Add %", "Data Quality Score", "Version"],
-        "Value": [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), source_name, len(df),
-                  df["PO#"].nunique(), df["Add Qty"].sum(), df["Add %"].mean(),
-                  weighted, score, VERSION],
-    })
+    metadata = build_metadata(df, score)
 
     return {
         "df": df, "audit": audit_df, "validation": validation_df, "score": score,
